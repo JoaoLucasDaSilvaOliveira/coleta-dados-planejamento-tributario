@@ -1,5 +1,6 @@
 import { flushPromises, shallowMount } from '@vue/test-utils'
 import { describe, expect, it, vi } from 'vitest'
+import { nextTick } from 'vue'
 
 const mocks = vi.hoisted(() => ({
   loadPublicForm: vi.fn(),
@@ -29,7 +30,7 @@ const buttonStub = {
   template: '<button v-bind="$attrs" @click="$emit(\'click\')"><slot /></button>',
 }
 
-function setupMocks() {
+function setupMocks(secondAmount: string | number = '10') {
   mocks.loadPublicForm.mockResolvedValue({
     data: {
       company: { legalName: 'Empresa Teste', nickname: null, cnpjFormatted: '11.222.333/0001-81' },
@@ -52,7 +53,7 @@ function setupMocks() {
         {
           expenseItemId: '00000000-0000-4000-8000-000000000002',
           name: 'Segunda despesa',
-          amount: '10',
+          amount: secondAmount,
           note: null,
           available: true,
         },
@@ -93,6 +94,19 @@ function mountPage() {
 }
 
 describe('PublicFormPage', () => {
+  it('accepts numeric amounts returned by Supabase without breaking rendering', async () => {
+    setupMocks(10)
+    const wrapper = mountPage()
+    await flushPromises()
+    ;(wrapper.vm as unknown as { confirmed: boolean }).confirmed = true
+    await nextTick()
+
+    await wrapper.findAll('button').find((button) => button.text().includes('Confirmar'))!.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('Segunda despesa')
+  })
+
   it('asks for confirmation before sending with incomplete values', async () => {
     setupMocks()
     const wrapper = mountPage()

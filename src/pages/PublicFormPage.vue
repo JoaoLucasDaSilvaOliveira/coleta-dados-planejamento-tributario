@@ -36,8 +36,8 @@ async function load() {
     view.value = result.data
     items.value = result.data.items.map((item) => ({
       ...item,
-      amountInput: item.amount ?? '',
-      noteInput: item.note ?? '',
+      amountInput: item.amount === null ? '' : String(item.amount),
+      noteInput: item.note === null ? '' : String(item.note),
     }))
   }
   loading.value = false
