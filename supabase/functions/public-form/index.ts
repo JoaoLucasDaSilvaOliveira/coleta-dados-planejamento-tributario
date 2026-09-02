@@ -1,4 +1,3 @@
-import { z } from 'npm:zod@3.25.76'
 import {
   adminClient,
   errorResponse,
@@ -7,27 +6,11 @@ import {
   readJson,
   requestId,
 } from '../_shared/http.ts'
-import { digestToken, isAmount, isUuid } from '../_shared/security.ts'
+import { digestToken } from '../_shared/security.ts'
 import { toTransactionItems } from '../_shared/public-submission.ts'
+import { publicFormInputSchema } from '../_shared/public-form-input.ts'
 
 const neutral = (id: string, origin?: string) => errorResponse(410, 'link_unavailable', id, origin)
-const inputSchema = z.object({
-  action: z.enum(['load', 'submit']),
-  token: z.string().regex(/^[A-Za-z0-9_-]{43}$/),
-  items: z
-    .array(
-      z.object({
-        expenseItemId: z.string().refine(isUuid),
-        amount: z.string().nullable().refine(isAmount),
-        note: z.string().max(1000).nullable(),
-        baseUpdatedAt: z.string().datetime().nullable().optional(),
-      }),
-    )
-    .max(100)
-    .optional(),
-  confirmed: z.literal(true).optional(),
-})
-
 Deno.serve(async (req) => {
   const id = requestId()
   const origin = req.headers.get('origin') ?? undefined
@@ -35,11 +18,9 @@ Deno.serve(async (req) => {
   if (req.method !== 'POST' || !originAllowed(req))
     return errorResponse(405, 'method_not_allowed', id, origin)
   try {
-    const parsed = inputSchema.safeParse(await readJson(req))
+    const parsed = publicFormInputSchema.safeParse(await readJson(req))
     if (!parsed.success) return errorResponse(400, 'invalid_input', id, origin)
     const input = parsed.data
-    if (input.action === 'submit' && (input.confirmed !== true || !input.items))
-      return errorResponse(400, 'confirmation_required', id, origin)
     const digest = await digestToken(input.token)
     const admin = adminClient()
     const request = await admin
@@ -58,6 +39,8 @@ Deno.serve(async (req) => {
       return neutral(id, origin)
     }
     if (input.action === 'submit') {
+      if (input.confirmed !== true || !input.items)
+        return errorResponse(400, 'confirmation_required', id, origin)
       const result = await admin.rpc('submit_form_transaction', {
         p_token_digest: digest,
         p_payload: { items: toTransactionItems(input.items) },
