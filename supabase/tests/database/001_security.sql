@@ -1,5 +1,5 @@
 begin;
-select plan(38);
+select plan(39);
 select ok((select relrowsecurity from pg_class where oid = 'public.app_users'::regclass), 'app_users has RLS');
 select ok((select relrowsecurity from pg_class where oid = 'public.companies'::regclass), 'companies has RLS');
 select ok((select relrowsecurity from pg_class where oid = 'public.form_requests'::regclass), 'form_requests has RLS');
@@ -38,5 +38,6 @@ select ok(has_function_privilege('service_role', 'public.import_submission_trans
 select ok((select count(*) from pg_trigger where tgname = 'history_submission_revisions_immutable') = 1, 'revision immutability trigger exists');
 select ok((select count(*) from pg_trigger where tgname = 'history_submission_revision_items_immutable') = 1, 'revision item immutability trigger exists');
 select ok((select count(*) from information_schema.columns where table_schema = 'public' and table_name = 'form_request_items' and column_name = 'initial_updated_at') = 1, 'request item freshness column exists');
+select ok(position('max(sr.revision_number)' in pg_get_functiondef('public.create_submission_revision_transaction(uuid, uuid, jsonb)'::regprocedure)) > 0, 'revision number query qualifies its column reference');
 select * from finish();
 rollback;
