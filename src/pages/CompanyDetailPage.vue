@@ -57,7 +57,6 @@ const savingAll = ref(false)
 const pageError = ref<string | null>(null)
 const expenseErrors = ref<Record<string, string>>({})
 const expenseSaveErrors = ref<Record<string, string>>({})
-const expenseSaveMessage = ref<string | null>(null)
 const baseUpdatedAtByItem = ref<Record<string, string | null>>({})
 const baseNonZeroByItem = ref<Record<string, boolean>>({})
 const linkError = ref<string | null>(null)
@@ -266,22 +265,17 @@ async function save(item: Item) {
 }
 async function saveAll() {
   if (savingAll.value) return false
-  expenseSaveMessage.value = null
   savingAll.value = true
   let success = true
   for (const item of collectionItems.value) {
     if (!(await save(item))) success = false
   }
   savingAll.value = false
-  if (!success) {
-    expenseSaveMessage.value = 'Revise os campos com erro antes de salvar as despesas.'
-    return false
-  }
+  if (!success) return false
   clearDraftStorage()
-  expenseSaveMessage.value = 'Despesas salvas nesta empresa.'
   return true
 }
-function setAll(selected: boolean) {
+async function setAll(selected: boolean) {
   const removing =
     !selected &&
     activeItems.value.some(
@@ -297,6 +291,7 @@ function setAll(selected: boolean) {
   )
     return
   for (const item of activeItems.value) drafts.value[item.id].selected = selected
+  await saveAll()
 }
 async function generateLink() {
   linkError.value = null
@@ -305,7 +300,7 @@ async function generateLink() {
     return
   }
   if (!(await saveAll())) {
-    linkError.value = 'Salve as despesas antes de gerar o link.'
+    linkError.value = 'Não foi possível salvar as despesas. Revise os campos com erro.'
     return
   }
   const result = await createFormRequest(company.value.id)
@@ -326,6 +321,11 @@ async function createInternalSubmissionRecord() {
     return
   }
   if (!window.confirm('Registrar estes valores como um novo envio interno no histórico?')) return
+  if (!(await saveAll())) {
+    internalSubmissionError.value =
+      'Não foi possível salvar as despesas antes do envio. Revise os campos com erro.'
+    return
+  }
   internalSubmissionSaving.value = true
   const result = await createInternalSubmission(company.value.id, internalSubmissionItems.value)
   internalSubmissionSaving.value = false
@@ -417,6 +417,7 @@ onMounted(() => void load())
               :disabled="!item.is_active"
                   :aria-label="`Selecionar ${item.name}`"
                   hide-details
+                  @update:model-value="void save(item)"
                 /></template
           ><template #default
             ><div class="expense-item__content">
@@ -428,7 +429,12 @@ onMounted(() => void load())
               ><v-list-item-subtitle v-if="!item.is_active"
                 >Item mantido para histórico e indisponível em novas solicitações.</v-list-item-subtitle
               ><div
-                v-if="drafts[item.id].selected || drafts[item.id].amount || drafts[item.id].note"
+                v-if="
+                  drafts[item.id].selected ||
+                  drafts[item.id].amount ||
+                  drafts[item.id].note ||
+                  baseNonZeroByItem[item.id]
+                "
                 class="expense-fields mt-2"
               >
                 <v-text-field
@@ -440,11 +446,13 @@ onMounted(() => void load())
                   hide-details="auto"
                   inputmode="decimal"
                   :error-messages="expenseErrors[item.id] ? [expenseErrors[item.id]] : []"
+                  @blur="void save(item)"
                 /><v-text-field
                   v-model="drafts[item.id].note"
                   label="Observação"
                   density="compact"
                   hide-details="auto"
+                  @blur="void save(item)"
                 />
               </div>
               <v-alert
@@ -461,24 +469,7 @@ onMounted(() => void load())
               v-if="saving === item.id"
               indeterminate
               size="20" /></template></v-list-item></v-list
-      ><v-card-actions class="expense-save-actions justify-center px-4 pt-4">
-        <v-btn
-          class="save-company-expenses-button"
-          color="primary"
-          prepend-icon="mdi-content-save-outline"
-          :loading="savingAll"
-          @click="saveAll"
-          >Salvar despesas</v-btn
-        >
-      </v-card-actions>
-      <v-alert
-        v-if="expenseSaveMessage"
-        type="success"
-        variant="tonal"
-        density="compact"
-        class="mx-4 mt-2 mb-3 text-center"
-        >{{ expenseSaveMessage }}</v-alert
-      ><v-card-actions class="internal-submit-actions justify-center px-4 pt-2 pb-5">
+      ><v-card-actions class="internal-submit-actions justify-center px-4 pt-4 pb-5">
         <v-btn
           class="internal-submit-button rounded-pill"
           variant="flat"
@@ -489,6 +480,13 @@ onMounted(() => void load())
           >Registrar envio interno</v-btn
         >
       </v-card-actions>
+      <v-alert
+        v-if="internalSubmissionError"
+        type="error"
+        variant="tonal"
+        density="compact"
+        class="mx-4 mb-3"
+      >{{ internalSubmissionError }}</v-alert>
     ></v-card>
     <v-card class="mb-6"
       ><v-card-item
@@ -570,12 +568,6 @@ onMounted(() => void load())
         <v-card-title>Histórico de envios</v-card-title>
         <v-card-subtitle>Os registros não podem ser alterados ou excluídos.</v-card-subtitle>
       </v-card-item>
-      <v-alert
-        v-if="internalSubmissionError"
-        type="error"
-        variant="tonal"
-        class="mx-4 mb-3"
-      >{{ internalSubmissionError }}</v-alert>
       <v-list lines="one">
         <v-list-item
           v-for="submission in submissions"

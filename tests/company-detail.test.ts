@@ -48,7 +48,7 @@ const passthroughStub = {
   inheritAttrs: true,
   template: '<div v-bind="$attrs"><slot /><slot name="prepend" /><slot name="append" /></div>',
 }
-const fieldStub = { inheritAttrs: false, template: '<div><slot /></div>' }
+const fieldStub = { inheritAttrs: true, template: '<div v-bind="$attrs"><slot /></div>' }
 const localStorageValues = new Map<string, string>()
 const localStorageMock = {
   clear: () => localStorageValues.clear(),
@@ -133,6 +133,7 @@ describe('CompanyDetailPage', () => {
     expect(mocks.getCompany).toHaveBeenCalledTimes(1)
     expect(mocks.listCompanyRequests).toHaveBeenCalledTimes(2)
     expect(wrapper.text()).toContain('Link criado.')
+    expect(wrapper.text()).not.toContain('Despesas salvas nesta empresa.')
   })
 
   it('hides inactive items without a non-zero current value', async () => {
@@ -193,7 +194,7 @@ describe('CompanyDetailPage', () => {
     await wrapper.vm.$nextTick()
 
     expect(wrapper.text()).toContain('Despesa arquivada')
-    await wrapper.get('.save-company-expenses-button').trigger('click')
+    await wrapper.find('[label="Média mensal"]').trigger('blur')
     await flushPromises()
 
     expect(mocks.saveCompanyExpense).toHaveBeenCalledWith(
@@ -232,13 +233,19 @@ describe('CompanyDetailPage', () => {
     await wrapper.findAll('button').find((button) => button.text() === 'Registrar envio interno')!.trigger('click')
     await flushPromises()
 
+    expect(mocks.saveCompanyExpense).toHaveBeenCalledWith(
+      'company-id',
+      'expense-id',
+      { isSelected: true, amount: null, note: null },
+      'actor-id',
+    )
     expect(mocks.createInternalSubmission).toHaveBeenCalledWith('company-id', [
       { expenseItemId: 'expense-id', amount: null, note: null },
     ])
     expect(mocks.listSubmissions).toHaveBeenCalledTimes(2)
   })
 
-  it('keeps unfinished edits locally until the operator explicitly saves expenses', async () => {
+  it('keeps unfinished edits locally without exposing an explicit save control', async () => {
     mocks.getCompany.mockResolvedValue({
       data: { id: 'company-id', legal_name: 'Empresa Teste', nickname: null, cnpj: '11222333000181' },
       error: null,
@@ -273,16 +280,7 @@ describe('CompanyDetailPage', () => {
         'expense-id'
       ].amount,
     ).toBe('1')
-
-    await restoredWrapper.get('.save-company-expenses-button').trigger('click')
-    await flushPromises()
-    expect(mocks.saveCompanyExpense).toHaveBeenCalledWith(
-      'company-id',
-      'expense-id',
-      { isSelected: false, amount: '1', note: null },
-      'actor-id',
-    )
-    expect(localStorage.length).toBe(0)
+    expect(restoredWrapper.find('.save-company-expenses-button').exists()).toBe(false)
   })
 
   it('imports a historical submission without navigating away', async () => {

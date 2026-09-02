@@ -209,7 +209,6 @@ a {
   }
   .form-actions > .v-btn,
   .link-generate-button,
-  .save-company-expenses-button,
   .internal-submit-button {
     width: 100%;
   }
@@ -232,7 +231,6 @@ a {
   .v-list-item {
     padding-inline: 1rem;
   }
-  .expense-save-actions,
   .internal-submit-actions {
     padding-inline: 1rem !important;
   }
