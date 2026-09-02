@@ -78,12 +78,26 @@ describe('CompanyDetailPage', () => {
     })
     mocks.listCompanyExpenses.mockResolvedValue({ data: [], error: null })
     mocks.saveCompanyExpense.mockResolvedValue({ data: {}, error: null })
-    mocks.listCompanyRequests.mockResolvedValue({ data: [], error: null })
+    mocks.listCompanyRequests
+      .mockResolvedValueOnce({ data: [], error: null })
+      .mockResolvedValueOnce({
+        data: [
+          {
+            id: 'request-id',
+            status: 'PENDING',
+            expires_at: '2026-10-01T00:00:00.000Z',
+            created_at: '2026-09-02T12:00:00Z',
+            submitted_at: null,
+          },
+        ],
+        error: null,
+      })
     mocks.listSubmissions.mockResolvedValue({ data: [], error: null })
     mocks.createFormRequest.mockResolvedValue({
       data: {
         publicUrl: 'http://localhost:5173/f#token',
         expiresAt: '2026-10-01T00:00:00.000Z',
+        requestId: 'request-id',
       },
       error: null,
     })
@@ -133,7 +147,85 @@ describe('CompanyDetailPage', () => {
     expect(mocks.getCompany).toHaveBeenCalledTimes(1)
     expect(mocks.listCompanyRequests).toHaveBeenCalledTimes(2)
     expect(wrapper.text()).toContain('Link criado.')
+    expect(wrapper.find('[aria-label="Ver link pendente"]').exists()).toBe(true)
     expect(wrapper.text()).not.toContain('Despesas salvas nesta empresa.')
+  })
+
+  it('shows progress while generating a new link', async () => {
+    mocks.getCompany.mockResolvedValue({
+      data: { id: 'company-id', legal_name: 'Empresa Teste', nickname: null, cnpj: '11222333000181' },
+      error: null,
+    })
+    mocks.listExpenseItems.mockResolvedValue({
+      data: [{ id: 'expense-id', name: 'Despesa', sort_order: 1, is_active: true }],
+      error: null,
+    })
+    mocks.listCompanyExpenses.mockResolvedValue({ data: [], error: null })
+    mocks.listCompanyRequests.mockResolvedValue({ data: [], error: null })
+    mocks.listSubmissions.mockResolvedValue({ data: [], error: null })
+    mocks.saveCompanyExpense.mockResolvedValue({ data: {}, error: null })
+    let resolveCreateFormRequest!: (value: unknown) => void
+    mocks.createFormRequest.mockReturnValue(
+      new Promise((resolve) => {
+        resolveCreateFormRequest = resolve
+      }),
+    )
+
+    const wrapper = shallowMount(CompanyDetailPage, { global: { stubs: pageStubs() } })
+    await flushPromises()
+    ;(wrapper.vm as unknown as { drafts: Record<string, { selected: boolean }> }).drafts[
+      'expense-id'
+    ].selected = true
+    await wrapper.vm.$nextTick()
+
+    const clickPromise = wrapper.find('.link-generate-button').trigger('click')
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.find('.link-generate-button').attributes('loading')).toBeDefined()
+    expect(wrapper.find('.link-generate-button').attributes('disabled')).toBeDefined()
+
+    resolveCreateFormRequest({
+      data: {
+        publicUrl: 'http://localhost:5173/f#token',
+        expiresAt: '2026-10-01T00:00:00.000Z',
+        requestId: 'request-id',
+      },
+      error: null,
+    })
+    await clickPromise
+    await flushPromises()
+  })
+
+  it('explains how to handle a pending request after a page refresh', async () => {
+    mocks.getCompany.mockResolvedValue({
+      data: { id: 'company-id', legal_name: 'Empresa Teste', nickname: null, cnpj: '11222333000181' },
+      error: null,
+    })
+    mocks.listExpenseItems.mockResolvedValue({ data: [], error: null })
+    mocks.listCompanyExpenses.mockResolvedValue({ data: [], error: null })
+    mocks.listCompanyRequests.mockResolvedValue({
+      data: [
+        {
+          id: 'request-id',
+          status: 'PENDING',
+          expires_at: '2026-10-01T00:00:00.000Z',
+          created_at: '2026-09-02T12:00:00Z',
+          submitted_at: null,
+        },
+      ],
+      error: null,
+    })
+    mocks.listSubmissions.mockResolvedValue({ data: [], error: null })
+
+    const wrapper = shallowMount(CompanyDetailPage, { global: { stubs: pageStubs() } })
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="pending-link-recovery"]').attributes('subtitle')).toContain(
+      'A URL deste link não pode ser recuperada após recarregar a página.',
+    )
+    expect(wrapper.find('[aria-label="Gerar novo link para solicitação pendente"]').exists()).toBe(
+      true,
+    )
   })
 
   it('hides inactive items without a non-zero current value', async () => {

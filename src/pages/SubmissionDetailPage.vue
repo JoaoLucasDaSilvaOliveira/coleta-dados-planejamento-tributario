@@ -14,7 +14,7 @@ import { formatMoney, noteSchema, parseMoney } from '@/lib/validation'
 
 type SubmissionItem = {
   expense_item_id: string
-  amount: string | null
+  amount: string | number | null
   note: string | null
 }
 type SubmissionRevision = {
@@ -32,7 +32,7 @@ type Submission = {
   submission_items: SubmissionItem[]
   submission_revisions: SubmissionRevision[]
 }
-type EditableItem = SubmissionItem
+type EditableItem = Omit<SubmissionItem, 'amount'> & { amount: string }
 
 const route = useRoute()
 const submission = ref<Submission | null>(null)
@@ -69,7 +69,7 @@ function beginEdit() {
   actionError.value = null
   draftItems.value = effectiveItems.value.map((item) => ({
     expense_item_id: item.expense_item_id,
-    amount: item.amount ?? '',
+    amount: item.amount === null ? '' : String(item.amount),
     note: item.note ?? '',
   }))
   editing.value = true

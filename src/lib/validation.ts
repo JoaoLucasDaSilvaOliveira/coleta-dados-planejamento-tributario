@@ -91,7 +91,7 @@ export function isNonZeroMoney(value: string | null | undefined) {
   return parsed.error === null && parsed.value !== null && BigInt(parsed.value.replace('.', '')) !== 0n
 }
 
-export function formatMoney(value: string | null | undefined) {
+export function formatMoney(value: string | number | null | undefined) {
   if (value === null || value === undefined || value === '') return 'Não informado'
   const number = Number(value)
   return Number.isFinite(number)

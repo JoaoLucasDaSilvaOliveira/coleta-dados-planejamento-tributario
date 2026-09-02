@@ -62,14 +62,14 @@ function mountPage() {
   })
 }
 
-function setupSubmission(revisions: unknown[] = []) {
+function setupSubmission(revisions: unknown[] = [], amount: string | number = '10.00') {
   mocks.getSubmission.mockResolvedValue({
     data: {
       id: 'submission-id',
       submitted_at: '2026-09-02T12:00:00Z',
       source: 'PUBLIC_LINK',
       created_by: null,
-      submission_items: [{ expense_item_id: 'expense-id', amount: '10.00', note: 'Original' }],
+      submission_items: [{ expense_item_id: 'expense-id', amount, note: 'Original' }],
       submission_revisions: revisions,
     },
     error: null,
@@ -98,6 +98,21 @@ describe('SubmissionDetailPage', () => {
       { expenseItemId: 'expense-id', amount: '25.50', note: 'Original' },
     ])
     expect(wrapper.text()).toContain('Envio original preservado')
+  })
+
+  it('normalizes numeric amounts before saving a correction', async () => {
+    setupSubmission([], 10)
+    mocks.createSubmissionRevision.mockResolvedValue({ data: { revisionId: 'revision-id' }, error: null })
+    const wrapper = mountPage()
+    await flushPromises()
+
+    await wrapper.get('button[aria-label="Editar valores"]').trigger('click')
+    await wrapper.findAll('button').find((button) => button.text() === 'Salvar alterações')!.trigger('click')
+    await flushPromises()
+
+    expect(mocks.createSubmissionRevision).toHaveBeenCalledWith('submission-id', [
+      { expenseItemId: 'expense-id', amount: '10', note: 'Original' },
+    ])
   })
 
   it('discards a correction without creating a revision', async () => {

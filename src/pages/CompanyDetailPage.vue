@@ -54,6 +54,7 @@ const requests = ref<
 const loading = ref(true)
 const saving = ref<string | null>(null)
 const savingAll = ref(false)
+const generatingLink = ref(false)
 const pageError = ref<string | null>(null)
 const expenseErrors = ref<Record<string, string>>({})
 const expenseSaveErrors = ref<Record<string, string>>({})
@@ -61,7 +62,12 @@ const baseUpdatedAtByItem = ref<Record<string, string | null>>({})
 const baseNonZeroByItem = ref<Record<string, boolean>>({})
 const linkError = ref<string | null>(null)
 const requestError = ref<string | null>(null)
-const link = ref<{ url: string; expiresAt: string } | null>(null)
+const link = ref<{ requestId: string; url: string; expiresAt: string } | null>(null)
+type ScrollTarget = {
+  scrollIntoView: (options?: { behavior?: string; block?: string }) => void
+}
+
+const createdLink = ref<ScrollTarget | null>(null)
 const submissions = ref<
   Array<{
     id: string
@@ -294,24 +300,34 @@ async function setAll(selected: boolean) {
   await saveAll()
 }
 async function generateLink() {
+  if (generatingLink.value) return
   linkError.value = null
   if (!company.value || !selectedCount.value) {
     linkError.value = 'Selecione ao menos uma despesa ativa antes de gerar o link.'
     return
   }
-  if (!(await saveAll())) {
-    linkError.value = 'Não foi possível salvar as despesas. Revise os campos com erro.'
-    return
+  generatingLink.value = true
+  try {
+    if (!(await saveAll())) {
+      linkError.value = 'Não foi possível salvar as despesas. Revise os campos com erro.'
+      return
+    }
+    const result = await createFormRequest(company.value.id)
+    if (result.error || !result.data) {
+      linkError.value = formRequestErrorMessage(result.error)
+      return
+    }
+    link.value = {
+      requestId: result.data.requestId,
+      url: result.data.publicUrl,
+      expiresAt: result.data.expiresAt,
+    }
+    const refreshedRequests = await listCompanyRequests(company.value.id)
+    if (!refreshedRequests.error)
+      requests.value = (refreshedRequests.data ?? []) as typeof requests.value
+  } finally {
+    generatingLink.value = false
   }
-  const result = await createFormRequest(company.value.id)
-  if (result.error || !result.data) {
-    linkError.value = formRequestErrorMessage(result.error)
-    return
-  }
-  link.value = { url: result.data.publicUrl, expiresAt: result.data.expiresAt }
-  const refreshedRequests = await listCompanyRequests(company.value.id)
-  if (!refreshedRequests.error)
-    requests.value = (refreshedRequests.data ?? []) as typeof requests.value
 }
 async function createInternalSubmissionRecord() {
   internalSubmissionError.value = null
@@ -372,6 +388,18 @@ async function shareLink() {
       url: link.value.url,
     })
   else await copyLink()
+}
+function hasLinkForRequest(requestId: string) {
+  return link.value?.requestId === requestId
+}
+function requestSubtitle(request: { id: string; status: string; created_at: string }) {
+  const createdAt = new Date(request.created_at).toLocaleString('pt-BR')
+  if (request.status === 'PENDING' && !hasLinkForRequest(request.id))
+    return `${createdAt} · A URL deste link não pode ser recuperada após recarregar a página.`
+  return createdAt
+}
+function showCurrentLink() {
+  createdLink.value?.scrollIntoView({ behavior: 'smooth', block: 'center' })
 }
 onMounted(() => void load())
 </script>
@@ -498,7 +526,8 @@ onMounted(() => void load())
           >O link expira em 30 dias e pode ser usado uma única vez.</v-card-subtitle
         ></v-card-item
       ><v-card-text
-        ><v-alert v-if="link" type="success" variant="tonal" class="mb-4"
+        ><div v-if="link" ref="createdLink"
+          ><v-alert type="success" variant="tonal" class="mb-4"
           ><div class="font-weight-medium">
             Link criado. Compartilhe agora; ele não poderá ser recuperado depois.
           </div>
@@ -514,12 +543,13 @@ onMounted(() => void load())
               target="_blank"
               >Abrir WhatsApp</v-btn
             >
-          </div></v-alert
+          </div></v-alert></div
         ><v-btn
           class="link-generate-button"
           color="primary"
           prepend-icon="mdi-link-plus"
-          :disabled="!selectedCount"
+          :loading="generatingLink"
+          :disabled="generatingLink || !selectedCount"
           @click="generateLink"
           >Gerar novo link</v-btn
         ><v-alert
@@ -547,12 +577,31 @@ onMounted(() => void load())
           v-for="request in requests"
           :key="request.id"
           :title="statuses[request.status] || request.status"
-          :subtitle="new Date(request.created_at).toLocaleString('pt-BR')"
+          :subtitle="requestSubtitle(request)"
+          :data-testid="request.status === 'PENDING' && !hasLinkForRequest(request.id) ? 'pending-link-recovery' : undefined"
           ><template #append
             ><div class="d-flex align-center ga-2">
               <v-chip size="small" variant="tonal">{{
                 statuses[request.status] || request.status
               }}</v-chip>
+              <v-btn
+                v-if="request.status === 'PENDING' && hasLinkForRequest(request.id)"
+                icon="mdi-eye-outline"
+                size="small"
+                variant="text"
+                aria-label="Ver link pendente"
+                @click="showCurrentLink"
+              />
+              <v-btn
+                v-else-if="request.status === 'PENDING'"
+                icon="mdi-link-plus"
+                size="small"
+                variant="text"
+                aria-label="Gerar novo link para solicitação pendente"
+                :loading="generatingLink"
+                :disabled="generatingLink || !selectedCount"
+                @click="generateLink"
+              />
               <v-btn
                 v-if="request.status === 'PENDING'"
                 icon="mdi-link-off"
